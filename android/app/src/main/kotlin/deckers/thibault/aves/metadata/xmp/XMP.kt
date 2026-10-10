@@ -93,6 +93,7 @@ object XMP {
         context: Context,
         mimeType: String,
         uri: Uri,
+        path: String?,
         processDirs: (dirs: List<Directory>) -> Unit,
     ) {
         if (mimeType != MimeTypes.MP4) return
@@ -108,14 +109,14 @@ object XMP {
                         SafeMp4UuidBoxHandler(metadata).processBox("", payload, -1, null)
                         processDirs(metadata.directories.filter { dir -> dir.tagCount > 0 }.toList())
                     } else {
-                        Log.w(LOG_TAG, "MP4 box too large at $boxSize bytes, for mimeType=$mimeType uri=$uri")
+                        Log.w(LOG_TAG, "MP4 box too large at $boxSize bytes, for mimeType=$mimeType uri=$uri path=$path")
                     }
                 }
             }
         } catch (e: NoClassDefFoundError) {
-            Log.w(LOG_TAG, "failed to parse MP4 for mimeType=$mimeType uri=$uri", e)
+            Log.w(LOG_TAG, "failed to parse MP4 for mimeType=$mimeType uri=$uri path=$path", e)
         } catch (e: Exception) {
-            Log.w(LOG_TAG, "failed to get XMP by MP4 parser for mimeType=$mimeType uri=$uri", e)
+            Log.w(LOG_TAG, "failed to get XMP by MP4 parser for mimeType=$mimeType uri=$uri path=$path", e)
         }
     }
 

@@ -385,8 +385,9 @@ void main() {
 
     await source.removeEntries({image1.uri}, includeTrash: true);
 
-    // waiting for microtask to make sure event bus listeners executed
-    await Future.microtask(() {});
+    // ensure event bus listeners executed
+    // `Future.microtask(() {})` is not as reliable as `Future.delayed(Duration.zero)`
+    await Future.delayed(Duration.zero);
 
     expect(source.rawAlbums.length, 0);
     expect(albumGrouping.exists(groupUri), false);
