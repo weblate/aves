@@ -89,6 +89,7 @@ import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.ContextUtils.queryContentPropValue
 import deckers.thibault.aves.utils.HashUtils
 import deckers.thibault.aves.utils.LogUtils
+import deckers.thibault.aves.utils.MathUtils.round
 import deckers.thibault.aves.utils.MemoryUtils
 import deckers.thibault.aves.utils.MimeTypes
 import deckers.thibault.aves.utils.MimeTypes.TIFF_EXTENSION_PATTERN
@@ -139,6 +140,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getAllMetadata(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         if (mimeType == null || uri == null) {
             result.error("getAllMetadata-args", "missing arguments", null)
@@ -166,7 +168,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: XMPException) {
-                Log.w(LOG_TAG, "failed to read XMP directory for uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read XMP directory for mimeType=$mimeType uri=$uri path=$path", e)
             }
             // remove this stat as it is not actual XMP data
             dirMap.remove(XmpDirectory().getTagName(XmpDirectory.TAG_XMP_VALUE_COUNT))
@@ -247,15 +249,12 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                                 && it !is AviDirectory
                     }.groupBy { dir -> dir.name }
 
-                    for (dirEntry in dirByName) {
-                        val baseDirName = dirEntry.key
-
+                    for ((baseDirName, sameNameDirs) in dirByName) {
                         // exclude directories known to be redundant with info derived on the Dart side
                         // they are excluded by name instead of runtime type because excluding `Mp4Directory`
                         // would also exclude derived directories, such as `Mp4UuidBoxDirectory`
                         if (allMetadataRedundantDirNames.contains(baseDirName)) continue
 
-                        val sameNameDirs = dirEntry.value
                         val sameNameDirCount = sameNameDirs.size
                         for (dirIndex in 0..<sameNameDirCount) {
                             val dir = sameNameDirs[dirIndex]
@@ -387,11 +386,11 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             }
         }
 
@@ -426,7 +425,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             } catch (e: Exception) {
                 // ExifInterface initialization can fail with a RuntimeException
                 // caused by an internal MediaMetadataRetriever failure
-                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for uri=$uri", e)
+                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for mimeType=$mimeType uri=$uri path=$path", e)
             }
         }
 
@@ -442,7 +441,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::fallbackProcessXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri) { dirs ->
+        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 fallbackProcessXmp(dir.xmpMeta)
             }
@@ -486,7 +485,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         if (metadataMap.isNotEmpty()) {
             result.success(metadataMap)
         } else {
-            result.error("getAllMetadata-failure", "failed to get metadata for mimeType=$mimeType uri=$uri", null)
+            result.error("getAllMetadata-failure", "failed to get metadata for mimeType=$mimeType uri=$uri path=$path", null)
         }
     }
 
@@ -557,7 +556,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(LOG_TAG, "failed to get Location Information box by MP4 parser for mimeType=$mimeType uri=$uri", e)
+                    Log.w(LOG_TAG, "failed to get Location Information box by MP4 parser for mimeType=$mimeType uri=$uri path=$path", e)
                 }
             }
         }
@@ -572,7 +571,11 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         val afterAvailableHeapSize = MemoryUtils.getAvailableHeapSize()
         val diff = beforeAvailableHeapSize - afterAvailableHeapSize
         if (diff > LARGE_HEAP_USAGE_THRESHOLD) {
-            Log.d(LOG_TAG, "Large heap usage (${diff}B) from cataloguing entry with mimeType=$mimeType uri=$uri path=$path size=$sizeBytes")
+            Log.d(
+                LOG_TAG, "Large heap usage for cataloguing" +
+                        ": used ${diff}B for entry size=${sizeBytes}B (x${if (sizeBytes != null) (diff.toDouble() / sizeBytes).round(2) else 0})" +
+                        " mimeType=$mimeType uri=$uri path=$path"
+            )
             MemoryUtils.requestGarbageCollection()
         }
 
@@ -614,11 +617,11 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri path=$path", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri path=$path", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri path=$path", e)
             }
         }
         return mimeType
@@ -679,7 +682,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     flags = flags or MASK_IS_HDR
                 }
             } catch (e: XMPException) {
-                Log.w(LOG_TAG, "failed to read XMP directory for uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read XMP directory for mimeType=$mimeType uri=$uri path=$path", e)
             }
         }
 
@@ -783,7 +786,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                                                 metadataMap[KEY_DATE_MILLIS] = date.time
                                             }
                                         } catch (e: ParseException) {
-                                            Log.w(LOG_TAG, "failed to parse PNG date=$it for uri=$uri", e)
+                                            Log.w(LOG_TAG, "failed to parse PNG date=$it for uri=$uri path=$path", e)
                                         }
                                     }
                                 }
@@ -824,11 +827,11 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     metadata.getDirectoriesOfType(Mp4UuidBoxDirectory::class.java).forEach(::processMp4Uuid)
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             }
         }
 
@@ -854,14 +857,14 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             } catch (e: Exception) {
                 // ExifInterface initialization can fail with a RuntimeException
                 // caused by an internal MediaMetadataRetriever failure
-                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for mimeType=$mimeType uri=$uri path=$path", e)
             }
         }
 
         XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::processXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri) { dirs ->
+        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 processXmp(dir.xmpMeta)
             }
@@ -1162,6 +1165,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getPanoramaInfo(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         if (mimeType == null || uri == null) {
             result.error("getPanoramaInfo-args", "missing arguments", null)
@@ -1186,25 +1190,25 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
             }
         }
 
         XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::processXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri) { dirs ->
+        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 processXmp(dir.xmpMeta)
             }
         }
 
         if (fields.isEmpty()) {
-            result.error("getPanoramaInfo-empty", "failed to get info for mimeType=$mimeType uri=$uri", null)
+            result.error("getPanoramaInfo-empty", "failed to get info for mimeType=$mimeType uri=$uri path=$path", null)
         } else {
             fields["projectionType"] = fields["projectionType"] ?: GoogleXMP.GPANO_PROJECTION_TYPE_DEFAULT
             result.success(fields)
@@ -1240,6 +1244,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getXmp(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         if (mimeType == null || uri == null) {
             result.error("getXmp-args", "missing arguments", null)
@@ -1282,7 +1287,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::processXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri) { dirs ->
+        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 processXmp(dir.xmpMeta)
             }

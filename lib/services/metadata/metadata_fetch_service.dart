@@ -54,6 +54,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getAllMetadata', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
       });
       if (result != null) return result as Map;
@@ -182,6 +183,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getPanoramaInfo', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
       }) as Map;
       return PanoramaInfo.fromMap(result);
@@ -212,6 +214,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getXmp', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
       });
       if (result != null) return AvesXmp.fromList((result as List).cast<String>());
