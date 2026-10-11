@@ -163,8 +163,10 @@ class SourceEntry {
             || MimeTypes.isRaw(sourceMimeType)
         ) return
 
+        val contentAddress = ContentAddress(mimeType = sourceMimeType, uri = uri, path = path, pageId = null)
+
         try {
-            Metadata.openSafeInputStream(context, uri, sourceMimeType, sizeBytes)?.use { input ->
+            Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                 val metadata = Helper.safeRead(input, sizeBytes)
 
                 // do not switch on specific MIME types, as the reported MIME type could be wrong
@@ -217,8 +219,10 @@ class SourceEntry {
     private fun fillByExifInterface(context: Context) {
         if (!MimeTypes.canReadWithExifInterface(sourceMimeType)) return
 
+        val contentAddress = ContentAddress(mimeType = sourceMimeType, uri = uri, path = path, pageId = null)
+
         try {
-            Metadata.openSafeInputStream(context, uri, sourceMimeType, sizeBytes)?.use { input ->
+            Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                 val exif = ExifInterface(input)
                 foundExif = true
                 exif.getSafeInt(ExifInterface.TAG_IMAGE_WIDTH, acceptZero = false) { width = it }

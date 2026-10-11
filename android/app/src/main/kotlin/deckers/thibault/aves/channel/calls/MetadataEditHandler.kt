@@ -3,6 +3,7 @@ package deckers.thibault.aves.channel.calls
 import android.content.Context
 import androidx.core.net.toUri
 import deckers.thibault.aves.channel.calls.Coresult.Companion.safe
+import deckers.thibault.aves.model.ContentAddress
 import deckers.thibault.aves.model.ExifInterfaceException
 import deckers.thibault.aves.model.ExifOrientationOp
 import deckers.thibault.aves.model.FieldMap
@@ -58,9 +59,9 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val mimeType = entryMap["mimeType"] as String?
         val uri = (entryMap["uri"] as String?)?.toUri()
         val path = entryMap["path"] as String?
-        val mimeType = entryMap["mimeType"] as String?
         val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
         if (uri == null || path == null || mimeType == null || sizeBytes == null) {
             result.error("editOrientation-args", "failed because entry fields are missing", null)
@@ -73,12 +74,12 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val callback = MetadataOpCallback("editOrientation", entryMap, result)
         provider.editOrientation(
             context = context,
-            path = path,
-            uri = uri,
-            mimeType = mimeType,
+            contentAddress = contentAddress,
             sizeBytes = sizeBytes,
             op = op,
             callback = callback,
@@ -95,9 +96,9 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val mimeType = entryMap["mimeType"] as String?
         val uri = (entryMap["uri"] as String?)?.toUri()
         val path = entryMap["path"] as String?
-        val mimeType = entryMap["mimeType"] as String?
         val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
         if (uri == null || path == null || mimeType == null || sizeBytes == null) {
             result.error("editExifDate-args", "failed because entry fields are missing", null)
@@ -110,12 +111,12 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val callback = MetadataOpCallback("editExifDate", entryMap, result)
         provider.editExifDate(
             context = context,
-            path = path,
-            uri = uri,
-            mimeType = mimeType,
+            contentAddress = contentAddress,
             sizeBytes = sizeBytes,
             dateMillis = dateMillis,
             shiftSeconds = shiftSeconds,
@@ -133,9 +134,9 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val mimeType = entryMap["mimeType"] as String?
         val uri = (entryMap["uri"] as String?)?.toUri()
         val path = entryMap["path"] as String?
-        val mimeType = entryMap["mimeType"] as String?
         val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
         if (uri == null || path == null || mimeType == null || sizeBytes == null) {
             result.error("editMetadata-args", "failed because entry fields are missing", null)
@@ -148,12 +149,12 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val callback = MetadataOpCallback("editMetadata", entryMap, result)
         provider.editMetadata(
             context = context,
-            path = path,
-            uri = uri,
-            mimeType = mimeType,
+            contentAddress = contentAddress,
             sizeBytes = sizeBytes,
             modifier = metadata,
             autoCorrectTrailerOffset = autoCorrectTrailerOffset,
@@ -168,9 +169,9 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val mimeType = entryMap["mimeType"] as String?
         val uri = (entryMap["uri"] as String?)?.toUri()
         val path = entryMap["path"] as String?
-        val mimeType = entryMap["mimeType"] as String?
         val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
         if (uri == null || path == null || mimeType == null || sizeBytes == null) {
             result.error("removeTrailerVideo-args", "failed because entry fields are missing", null)
@@ -183,12 +184,12 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val callback = MetadataOpCallback("removeTrailerVideo", entryMap, result)
         provider.removeTrailerVideo(
             context = context,
-            path = path,
-            uri = uri,
-            mimeType = mimeType,
+            contentAddress = contentAddress,
             sizeBytes = sizeBytes,
             callback = callback,
         )
@@ -202,9 +203,9 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val mimeType = entryMap["mimeType"] as String?
         val uri = (entryMap["uri"] as String?)?.toUri()
         val path = entryMap["path"] as String?
-        val mimeType = entryMap["mimeType"] as String?
         val sizeBytes = (entryMap["sizeBytes"] as Number?)?.toLong()
         if (uri == null || path == null || mimeType == null || sizeBytes == null) {
             result.error("removeTypes-args", "failed because entry fields are missing", null)
@@ -217,12 +218,12 @@ class MetadataEditHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val callback = MetadataOpCallback("removeTypes", entryMap, result)
         provider.removeMetadataTypes(
             context = context,
-            path = path,
-            uri = uri,
-            mimeType = mimeType,
+            contentAddress = contentAddress,
             sizeBytes = sizeBytes,
             types = types.toSet(),
             callback = callback,

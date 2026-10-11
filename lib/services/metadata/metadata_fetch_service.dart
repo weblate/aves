@@ -122,6 +122,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
         final result = await _channel.invokeMethod('getOverlayMetadata', <String, Object?>{
           'mimeType': entry.mimeType,
           'uri': entry.uri,
+          'path': entry.path,
           'sizeBytes': entry.sizeBytes,
           'fields': fields.map((v) => v.toPlatform).toList(),
         }) as Map;
@@ -139,6 +140,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getGeoTiffInfo', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
       }) as Map;
       return GeoTiffInfo.fromMap(result);
@@ -154,6 +156,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getMultiPageInfo', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'isMotionPhoto': entry.isMotionPhoto,
       });
@@ -199,6 +202,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getIptc', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
       });
       if (result != null) return (result as List).cast<Map>().map((fields) => fields.cast<String, dynamic>()).toList();
     } on PlatformException catch (e) {
@@ -249,6 +253,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getContentResolverProp', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'prop': prop,
       });
       if (result != null) return result as String;
@@ -264,6 +269,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
       final result = await _channel.invokeMethod('getDate', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'field': field.toPlatform,
       });
@@ -283,6 +289,7 @@ class PlatformMetadataFetchService implements MetadataFetchService {
         final result = await _channel.invokeMethod('getFields', <String, Object?>{
           'mimeType': entry.mimeType,
           'uri': entry.uri,
+          'path': entry.path,
           'sizeBytes': entry.sizeBytes,
           'fields': fields.map((v) => v.toPlatform).toList(),
         });

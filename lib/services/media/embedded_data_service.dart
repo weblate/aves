@@ -32,6 +32,7 @@ class PlatformEmbeddedDataService implements EmbeddedDataService {
       final result = await _platform.invokeMethod('getExifThumbnails', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
       });
       if (result != null) {
@@ -53,6 +54,7 @@ class PlatformEmbeddedDataService implements EmbeddedDataService {
       final result = await _platform.invokeMethod('extractGoogleDeviceItem', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'displayName': ['${entry.bestTitle}', dataUri].join(AText.separator),
         'dataUri': dataUri,
@@ -70,6 +72,7 @@ class PlatformEmbeddedDataService implements EmbeddedDataService {
       final result = await _platform.invokeMethod('extractMotionPhotoImage', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'displayName': ['${entry.bestTitle}', 'Image'].join(AText.separator),
       });
@@ -86,6 +89,7 @@ class PlatformEmbeddedDataService implements EmbeddedDataService {
       final result = await _platform.invokeMethod('extractMotionPhotoVideo', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'displayName': ['${entry.bestTitle}', 'Video'].join(AText.separator),
       });
@@ -102,6 +106,7 @@ class PlatformEmbeddedDataService implements EmbeddedDataService {
       final result = await _platform.invokeMethod('extractJpegMpfItem', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'displayName': ['${entry.bestTitle}', 'MPF #$id'].join(AText.separator),
         'id': id,
@@ -136,6 +141,7 @@ class PlatformEmbeddedDataService implements EmbeddedDataService {
       final result = await _platform.invokeMethod('extractXmpDataProp', <String, Object?>{
         'mimeType': entry.mimeType,
         'uri': entry.uri,
+        'path': entry.path,
         'sizeBytes': entry.sizeBytes,
         'displayName': ['${entry.bestTitle}', '$propPath'].join(AText.separator),
         'propPath': propPath,

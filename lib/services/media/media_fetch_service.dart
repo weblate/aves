@@ -72,8 +72,8 @@ class PlatformMediaFetchService implements MediaFetchService {
   Future<AvesEntry?> getEntry(String uri, String? mimeType, {bool allowUnsized = false}) async {
     try {
       final result = await _platformObject.invokeMethod('getEntry', <String, Object?>{
-        'uri': uri,
         'mimeType': mimeType,
+        'uri': uri,
         'allowUnsized': allowUnsized,
       }) as Map;
       AvesEntry.normalizeMimeTypeFields(result);
@@ -94,9 +94,9 @@ class PlatformMediaFetchService implements MediaFetchService {
     return <String, Object?>{
       'op': 'getFullImage',
       'decoded': decoded,
+      'mimeType': request.mimeType,
       'uri': request.uri,
       'pageId': request.pageId,
-      'mimeType': request.mimeType,
       'sizeBytes': request.sizeBytes,
       'rotationDegrees': request.rotationDegrees ?? 0,
       'isFlipped': request.isFlipped,
@@ -233,9 +233,9 @@ class PlatformMediaFetchService implements MediaFetchService {
       'op': 'getRegion',
       'decoded': decoded,
       'applyGainmap': applyHdrGainmap,
+      'mimeType': request.mimeType,
       'uri': request.uri,
       'pageId': request.pageId,
-      'mimeType': request.mimeType,
       'sizeBytes': request.sizeBytes,
       'sampleSize': request.sampleSize,
       'regionX': request.regionRect.left,
@@ -272,9 +272,9 @@ class PlatformMediaFetchService implements MediaFetchService {
     final args = <String, Object?>{
       'op': 'getThumbnail',
       'decoded': decoded,
+      'mimeType': mimeType,
       'uri': uri,
       'pageId': request.pageId,
-      'mimeType': mimeType,
       'dateModifiedMillis': request.dateModifiedMillis,
       'rotationDegrees': request.rotationDegrees,
       'isFlipped': request.isFlipped,
@@ -400,27 +400,16 @@ class PlatformMediaFetchService implements MediaFetchService {
 }
 
 @immutable
-class ImageRequest extends Equatable {
-  final String uri;
-  final String mimeType;
-  final int? rotationDegrees;
-  final bool isFlipped;
-  final bool isAnimated;
-  final int? pageId;
-  final int? sizeBytes;
-  final BytesReceivedCallback? onBytesReceived;
-
+class const ImageRequest(
+  final String uri,
+  final String mimeType, {
+  required final int? rotationDegrees,
+  required final bool isFlipped,
+  required final bool isAnimated,
+  required final int? pageId,
+  required final int? sizeBytes,
+  final BytesReceivedCallback? onBytesReceived,
+}) extends Equatable {
   @override
   List<Object?> get props => [uri, mimeType, rotationDegrees, isFlipped, isAnimated, pageId, sizeBytes, onBytesReceived];
-
-  const new(
-    this.uri,
-    this.mimeType, {
-    required this.rotationDegrees,
-    required this.isFlipped,
-    required this.isAnimated,
-    required this.pageId,
-    required this.sizeBytes,
-    this.onBytesReceived,
-  });
 }

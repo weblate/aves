@@ -250,8 +250,8 @@ class ActivityResultStreamHandler(private val activity: Activity, arguments: Any
     }
 
     private fun edit() {
-        val uri = args["uri"] as String?
         val mimeType = args["mimeType"] as String? // optional
+        val uri = args["uri"] as String?
         if (uri == null) {
             error("edit-args", "missing arguments", null)
             return
