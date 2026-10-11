@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import deckers.thibault.aves.metadata.xmp.XMP
+import deckers.thibault.aves.model.ContentAddress
 import deckers.thibault.aves.model.FileDescriptorException
 import deckers.thibault.aves.model.Mp4FragmentedException
 import deckers.thibault.aves.model.Mp4TooLargeException
@@ -331,11 +332,10 @@ object Mp4ParserHelper {
         }
     }
 
-    fun getUserDataBox(
-        context: Context,
-        mimeType: String,
-        uri: Uri,
-    ): UserDataBox? {
+    fun getUserDataBox(context: Context, contentAddress: ContentAddress): UserDataBox? {
+        val mimeType = contentAddress.mimeType
+        val uri = contentAddress.uri
+
         if (mimeType != MimeTypes.MP4) return null
 
         try {
@@ -343,9 +343,9 @@ object Mp4ParserHelper {
                 return@consumeIso Path.getPath(isoFile.movieBox, UserDataBox.TYPE)
             }
         } catch (ex: NoClassDefFoundError) {
-            Log.w(LOG_TAG, "failed to parse MP4 for mimeType=$mimeType uri=$uri", ex)
+            Log.w(LOG_TAG, "failed to parse MP4 for $contentAddress", ex)
         } catch (ex: Exception) {
-            Log.w(LOG_TAG, "failed to get User Data box by MP4 parser for mimeType=$mimeType uri=$uri", ex)
+            Log.w(LOG_TAG, "failed to get User Data box by MP4 parser for $contentAddress", ex)
         }
         return null
     }

@@ -84,6 +84,7 @@ import deckers.thibault.aves.metadata.xmp.XMP.getSafeLocalizedText
 import deckers.thibault.aves.metadata.xmp.XMP.hasHdrGainMap
 import deckers.thibault.aves.metadata.xmp.XMP.isMotionPhoto
 import deckers.thibault.aves.metadata.xmp.XMP.isPanorama
+import deckers.thibault.aves.model.ContentAddress
 import deckers.thibault.aves.model.FieldMap
 import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.ContextUtils.queryContentPropValue
@@ -147,6 +148,8 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val metadataMap = HashMap<String, MutableMap<String, String>>()
         var foundExif = false
         var foundXmp = false
@@ -168,7 +171,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: XMPException) {
-                Log.w(LOG_TAG, "failed to read XMP directory for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read XMP directory for $contentAddress", e)
             }
             // remove this stat as it is not actual XMP data
             dirMap.remove(XmpDirectory().getTagName(XmpDirectory.TAG_XMP_VALUE_COUNT))
@@ -238,7 +241,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
 
         if (canReadWithMetadataExtractor(mimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     foundExif = metadata.directories.any { it is ExifDirectoryBase && it.tagCount > 0 }
                     foundMp4Uuid = metadata.directories.any { it is Mp4UuidBoxDirectory && it.tagCount > 0 }
@@ -386,18 +389,18 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
 
         if (!foundExif && canReadWithExifInterface(mimeType)) {
             // fallback to read EXIF via ExifInterface
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val exif = ExifInterface(input)
                     val allTags = describeAll(exif).toMutableMap()
                     if (foundXmp) {
@@ -425,7 +428,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             } catch (e: Exception) {
                 // ExifInterface initialization can fail with a RuntimeException
                 // caused by an internal MediaMetadataRetriever failure
-                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for $contentAddress", e)
             }
         }
 
@@ -438,10 +441,10 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             }
         }
 
-        XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::fallbackProcessXmp)
+        XMP.checkIsoBMFFImage(context, contentAddress, foundXmp, ::fallbackProcessXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
+        XMP.checkMp4(context, contentAddress) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 fallbackProcessXmp(dir.xmpMeta)
             }
@@ -454,7 +457,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
 
         if (isVideo(mimeType)) {
             // `metadata-extractor` do not extract custom tags in user data box
-            Mp4ParserHelper.getUserDataBox(context, mimeType, uri)?.let { box ->
+            Mp4ParserHelper.getUserDataBox(context, contentAddress)?.let { box ->
                 metadataMap[Metadata.DIR_MP4_USER_DATA] = Mp4ParserHelper.extractBoxFields(box)
             }
 
@@ -485,7 +488,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         if (metadataMap.isNotEmpty()) {
             result.success(metadataMap)
         } else {
-            result.error("getAllMetadata-failure", "failed to get metadata for mimeType=$mimeType uri=$uri path=$path", null)
+            result.error("getAllMetadata-failure", "failed to get metadata for $contentAddress", null)
         }
     }
 
@@ -535,18 +538,20 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val beforeAvailableHeapSize = MemoryUtils.getAvailableHeapSize()
 
         val metadataMap = HashMap<String, Any>()
-        getCatalogMetadataByMetadataExtractor(mimeType, uri, path, sizeBytes, metadataMap)
+        getCatalogMetadataByMetadataExtractor(contentAddress, sizeBytes, metadataMap)
 
         if (isVideo(mimeType) || isIsoBMFFImage(mimeType)) {
-            getMultimediaCatalogMetadataByMediaMetadataRetriever(mimeType, uri, metadataMap)
+            getMultimediaCatalogMetadataByMediaMetadataRetriever(contentAddress, metadataMap)
 
             // fallback to MP4 `loci` box for location
             if (!metadataMap.contains(KEY_LATITUDE) || !metadataMap.contains(KEY_LONGITUDE)) {
                 try {
-                    Mp4ParserHelper.getUserDataBox(context, mimeType, uri)?.let { userDataBox ->
+                    Mp4ParserHelper.getUserDataBox(context, contentAddress)?.let { userDataBox ->
                         Path.getPath<LocationInformationBox>(userDataBox, LocationInformationBox.TYPE)?.let { locationBox ->
                             if (!locationBox.isParsed) {
                                 locationBox.parseDetails()
@@ -556,7 +561,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(LOG_TAG, "failed to get Location Information box by MP4 parser for mimeType=$mimeType uri=$uri path=$path", e)
+                    Log.w(LOG_TAG, "failed to get Location Information box by MP4 parser for $contentAddress", e)
                 }
             }
         }
@@ -573,8 +578,9 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         if (diff > LARGE_HEAP_USAGE_THRESHOLD) {
             Log.d(
                 LOG_TAG, "Large heap usage for cataloguing" +
-                        ": used ${diff}B for entry size=${sizeBytes}B (x${if (sizeBytes != null) (diff.toDouble() / sizeBytes).round(2) else 0})" +
-                        " mimeType=$mimeType uri=$uri path=$path"
+                        ": used ${diff shr 20}MB for entry size=${if (sizeBytes != null) sizeBytes shr 20 else 0}MB" +
+                        " (x${if (sizeBytes != null) (diff.toDouble() / sizeBytes).round(2) else 0})" +
+                        " $contentAddress"
             )
             MemoryUtils.requestGarbageCollection()
         }
@@ -593,15 +599,16 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
      * (false positives, false negatives), in which case we trust the file extension
      */
     private fun resolveMimeType(
-        sourceMimeType: String,
-        uri: Uri,
-        path: String?,
+        contentAddress: ContentAddress,
         sizeBytes: Long?,
     ): String {
+        val sourceMimeType = contentAddress.mimeType
+        val path = contentAddress.path
+
         var mimeType = sourceMimeType
         if (canReadWithMetadataExtractor(sourceMimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, sourceMimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     for (dir in metadata.getDirectoriesOfType(FileTypeDirectory::class.java)) {
                         if (path?.matches(TIFF_EXTENSION_PATTERN) == true) {
@@ -617,24 +624,26 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$sourceMimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
         return mimeType
     }
 
     private fun getCatalogMetadataByMetadataExtractor(
-        sourceMimeType: String,
-        uri: Uri,
-        path: String?,
+        sourceContentAddress: ContentAddress,
         sizeBytes: Long?,
         metadataMap: HashMap<String, Any>,
     ) {
-        val mimeType = resolveMimeType(sourceMimeType, uri, path, sizeBytes)
+        val mimeType = resolveMimeType(sourceContentAddress, sizeBytes)
+        val uri = sourceContentAddress.uri
+        val path = sourceContentAddress.path
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = sourceContentAddress.pageId)
+
         metadataMap[KEY_MIME_TYPE] = mimeType
 
         var flags = (metadataMap[KEY_FLAGS] ?: 0) as Int
@@ -682,7 +691,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     flags = flags or MASK_IS_HDR
                 }
             } catch (e: XMPException) {
-                Log.w(LOG_TAG, "failed to read XMP directory for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read XMP directory for $contentAddress", e)
             }
         }
 
@@ -695,7 +704,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
 
         if (canReadWithMetadataExtractor(mimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     foundExif = metadata.directories.any { it is ExifDirectoryBase && it.tagCount > 0 }
                     foundMp4Uuid = metadata.directories.any { it is Mp4UuidBoxDirectory && it.tagCount > 0 }
@@ -735,7 +744,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     if (metadata.getDirectoriesOfType(MpEntryDirectory::class.java).count { !it.entry.isThumbnail } > 1) {
                         flags = flags or MASK_IS_MULTIPAGE
 
-                        if (hasAppleHdrGainMap(uri, sizeBytes)) {
+                        if (hasAppleHdrGainMap(contentAddress, sizeBytes)) {
                             flags = flags or MASK_IS_HDR
                         }
                     }
@@ -827,18 +836,18 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     metadata.getDirectoriesOfType(Mp4UuidBoxDirectory::class.java).forEach(::processMp4Uuid)
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
 
         if (!foundExif && canReadWithExifInterface(mimeType)) {
             // fallback to read EXIF via ExifInterface
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val exif = ExifInterface(input)
                     exif.getSafeDateMillis(ExifInterface.TAG_DATETIME_ORIGINAL, ExifInterface.TAG_SUBSEC_TIME_ORIGINAL) { metadataMap[KEY_DATE_MILLIS] = it }
                     if (!metadataMap.containsKey(KEY_DATE_MILLIS)) {
@@ -861,10 +870,10 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             }
         }
 
-        XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::processXmp)
+        XMP.checkIsoBMFFImage(context, contentAddress, foundXmp, ::processXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
+        XMP.checkMp4(context, contentAddress) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 processXmp(dir.xmpMeta)
             }
@@ -880,12 +889,14 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         metadataMap[KEY_FLAGS] = flags
     }
 
-    private fun hasAppleHdrGainMap(uri: Uri, sizeBytes: Long?): Boolean {
-        val mpEntries = MultiPage.getJpegMpfEntries(context, uri, sizeBytes) ?: return false
+    private fun hasAppleHdrGainMap(contentAddress: ContentAddress, sizeBytes: Long?): Boolean {
+        val uri = contentAddress.uri
+
+        val mpEntries = MultiPage.getJpegMpfEntries(context, contentAddress, sizeBytes) ?: return false
         mpEntries.filter { it.type == MpEntry.TYPE_UNDEFINED }.forEachIndexed { mpIndex, mpEntry ->
             var dataOffset = mpEntry.dataOffset
             if (dataOffset > 0) {
-                val baseOffset = MultiPage.getJpegMpfBaseOffset(context, uri, sizeBytes)
+                val baseOffset = MultiPage.getJpegMpfBaseOffset(context, contentAddress, sizeBytes)
                 if (baseOffset != null) {
                     dataOffset += baseOffset
                 }
@@ -898,7 +909,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                         return true
                     }
                 } catch (e: Exception) {
-                    Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for uri=$uri mpIndex=$mpIndex mpEntry=$mpEntry", e)
+                    Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress mpIndex=$mpIndex mpEntry=$mpEntry", e)
                 }
             }
         }
@@ -906,10 +917,12 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     }
 
     private fun getMultimediaCatalogMetadataByMediaMetadataRetriever(
-        mimeType: String,
-        uri: Uri,
+        contentAddress: ContentAddress,
         metadataMap: HashMap<String, Any>,
     ) {
+        val mimeType = contentAddress.mimeType
+        val uri = contentAddress.uri
+
         val retriever = StorageUtils.openMetadataRetriever(context, uri) ?: return
 
         var flags = (metadataMap[KEY_FLAGS] ?: 0) as Int
@@ -956,7 +969,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
 
             metadataMap[KEY_FLAGS] = flags
         } catch (e: Exception) {
-            Log.w(LOG_TAG, "failed to get catalog metadata by MediaMetadataRetriever for uri=$uri", e)
+            Log.w(LOG_TAG, "failed to get catalog metadata by MediaMetadataRetriever for $contentAddress", e)
         } finally {
             // cannot rely on `MediaMetadataRetriever` being `AutoCloseable` on older APIs
             retriever.release()
@@ -966,12 +979,15 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getOverlayMetadata(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         val fields = call.argument<List<String>>("fields")
         if (mimeType == null || uri == null || fields == null) {
             result.error("getOverlayMetadata-args", "missing arguments", null)
             return
         }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
 
         val metadataMap = HashMap<String, Any>()
         if (fields.isEmpty() || isVideo(mimeType)) {
@@ -995,7 +1011,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         var foundExif = false
         if (canReadWithMetadataExtractor(mimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     for (dir in metadata.getDirectoriesOfType(ExifSubIFDDirectory::class.java)) {
                         foundExif = true
@@ -1017,18 +1033,18 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
 
         if (!foundExif && canReadWithExifInterface(mimeType)) {
             // fallback to read EXIF via ExifInterface
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val exif = ExifInterface(input)
                     if (fields.contains(KEY_APERTURE)) {
                         exif.getSafeDouble(ExifInterface.TAG_F_NUMBER) { metadataMap[KEY_APERTURE] = it }
@@ -1097,15 +1113,18 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getGeoTiffInfo(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         if (mimeType == null || uri == null) {
             result.error("getGeoTiffInfo-args", "missing arguments", null)
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         if (canReadWithMetadataExtractor(mimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     val fields = HashMap<Int, Any?>()
                     for (dir in metadata.getDirectoriesOfType(ExifIFD0Directory::class.java)) {
@@ -1125,19 +1144,20 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     return
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
-        result.error("getGeoTiffInfo-empty", "failed to get info for mimeType=$mimeType uri=$uri", null)
+        result.error("getGeoTiffInfo-empty", "failed to get info for $contentAddress", null)
     }
 
     private fun getMultiPageInfo(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         val isMotionPhoto = call.argument<Boolean>("isMotionPhoto")
         if (mimeType == null || uri == null || sizeBytes == null || isMotionPhoto == null) {
@@ -1145,18 +1165,20 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val pages: ArrayList<FieldMap>? = if (isMotionPhoto) {
-            MultiPage.getMotionPhotoPages(context, uri, mimeType, sizeBytes)
+            MultiPage.getMotionPhotoPages(context, contentAddress, sizeBytes)
         } else {
             when (mimeType) {
                 MimeTypes.HEIC, MimeTypes.HEIF -> MultiPage.getHeicTracks(context, uri)
-                MimeTypes.JPEG -> MultiPage.getJpegMpfPages(context, uri, sizeBytes)
+                MimeTypes.JPEG -> MultiPage.getJpegMpfPages(context, contentAddress, sizeBytes)
                 MimeTypes.TIFF -> MultiPage.getTiffPages(context, uri)
                 else -> null
             }
         }
         if (pages?.isEmpty() == true) {
-            result.error("getMultiPageInfo-empty", "failed to get pages for mimeType=$mimeType uri=$uri", null)
+            result.error("getMultiPageInfo-empty", "failed to get pages for $contentAddress", null)
         } else {
             result.success(pages)
         }
@@ -1172,6 +1194,8 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val fields: FieldMap = hashMapOf()
         var foundXmp = false
 
@@ -1183,32 +1207,32 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
 
         if (canReadWithMetadataExtractor(mimeType) && !isLargeMp4(mimeType, sizeBytes)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     metadata.getDirectoriesOfType(XmpDirectory::class.java).map { it.xmpMeta }.forEach {
                         processXmp(it, allowMultiple = true)
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri path=$path", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
 
-        XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::processXmp)
+        XMP.checkIsoBMFFImage(context, contentAddress, foundXmp, ::processXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
+        XMP.checkMp4(context, contentAddress) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 processXmp(dir.xmpMeta)
             }
         }
 
         if (fields.isEmpty()) {
-            result.error("getPanoramaInfo-empty", "failed to get info for mimeType=$mimeType uri=$uri path=$path", null)
+            result.error("getPanoramaInfo-empty", "failed to get info for $contentAddress", null)
         } else {
             fields["projectionType"] = fields["projectionType"] ?: GoogleXMP.GPANO_PROJECTION_TYPE_DEFAULT
             result.success(fields)
@@ -1218,10 +1242,13 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getIptc(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         if (mimeType == null || uri == null) {
             result.error("getIptc-args", "missing arguments", null)
             return
         }
+
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
 
         if (MimeTypes.canReadWithPixyMeta(mimeType)) {
             try {
@@ -1231,7 +1258,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     return
                 }
             } catch (e: Exception) {
-                result.error("getIptc-exception", "failed to read IPTC for mimeType=$mimeType uri=$uri", e.stackTraceToString())
+                result.error("getIptc-exception", "failed to read IPTC for $contentAddress", e.stackTraceToString())
                 return
             }
         }
@@ -1251,6 +1278,8 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val xmpStrings = mutableListOf<String>()
         var foundXmp = false
 
@@ -1266,28 +1295,28 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
 
         if (canReadWithMetadataExtractor(mimeType) && !isLargeMp4(mimeType, sizeBytes)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     metadata.getDirectoriesOfType(XmpDirectory::class.java).map { it.xmpMeta }.forEach {
                         processXmp(it, allowMultiple = true)
                     }
                 }
             } catch (e: Exception) {
-                result.error("getXmp-exception", "failed to read XMP for mimeType=$mimeType uri=$uri", e.stackTraceToString())
+                result.error("getXmp-exception", "failed to read XMP for $contentAddress", e.stackTraceToString())
                 return
             } catch (e: NoClassDefFoundError) {
-                result.error("getXmp-noclass", "failed to read XMP for mimeType=$mimeType uri=$uri", e.stackTraceToString())
+                result.error("getXmp-noclass", "failed to read XMP for $contentAddress", e.stackTraceToString())
                 return
             } catch (e: AssertionError) {
-                result.error("getXmp-assert", "failed to read XMP for mimeType=$mimeType uri=$uri", e.stackTraceToString())
+                result.error("getXmp-assert", "failed to read XMP for $contentAddress", e.stackTraceToString())
                 return
             }
         }
 
-        XMP.checkIsoBMFFImage(context, mimeType, uri, foundXmp, ::processXmp)
+        XMP.checkIsoBMFFImage(context, contentAddress, foundXmp, ::processXmp)
         // `metadata-extractor` may fail to get UUID boxes for some MP4 files,
         // so we always check with `mp4parser`, even for smaller files
-        XMP.checkMp4(context, mimeType, uri, path) { dirs ->
+        XMP.checkMp4(context, contentAddress) { dirs ->
             for (dir in dirs.filterIsInstance<XmpDirectory>()) {
                 processXmp(dir.xmpMeta)
             }
@@ -1317,23 +1346,27 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getContentPropValue(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val prop = call.argument<String>("prop")
         if (mimeType == null || uri == null || prop == null) {
             result.error("getContentPropValue-args", "missing arguments", null)
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         try {
             val value = context.queryContentPropValue(uri, mimeType, prop)
             result.success(value?.toString())
         } catch (e: Exception) {
-            result.error("getContentPropValue-query", "failed to query prop for uri=$uri", e.stackTraceToString())
+            result.error("getContentPropValue-query", "failed to query prop for $contentAddress", e.stackTraceToString())
         }
     }
 
     private fun getDate(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         val field = call.argument<String>("field")
         if (mimeType == null || uri == null || field == null) {
@@ -1341,10 +1374,12 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         var dateMillis: Long? = null
         if (canReadWithMetadataExtractor(mimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     val tag = when (field) {
                         ExifInterface.TAG_DATETIME -> ExifIFD0Directory.TAG_DATETIME
@@ -1389,11 +1424,11 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
 
@@ -1403,6 +1438,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
     private fun getFields(call: MethodCall, result: MethodChannel.Result) {
         val mimeType = call.argument<String>("mimeType")
         val uri = call.argument<String>("uri")?.toUri()
+        val path = call.argument<String>("path")
         val sizeBytes = call.argument<Number>("sizeBytes")?.toLong()
         val fields = call.argument<List<String>>("fields")
         if (mimeType == null || uri == null || fields == null) {
@@ -1410,33 +1446,37 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             return
         }
 
+        val contentAddress = ContentAddress(mimeType = mimeType, uri = uri, path = path, pageId = null)
+
         val metadataMap = HashMap<String, Any?>()
 
         val hashFields = fields.filter { it.startsWith(HASH_FIELD_PREFIX) }.toSet()
-        metadataMap.putAll(getHashFields(uri, mimeType, sizeBytes, hashFields))
+        metadataMap.putAll(getHashFields(contentAddress, sizeBytes, hashFields))
 
         val exifFields = fields.filterNot { hashFields.contains(it) }.toSet()
-        metadataMap.putAll(getExifFields(uri, mimeType, sizeBytes, exifFields))
+        metadataMap.putAll(getExifFields(contentAddress, sizeBytes, exifFields))
 
         result.success(metadataMap)
     }
 
-    private fun getHashFields(uri: Uri, mimeType: String, sizeBytes: Long?, fields: Set<String>): FieldMap {
+    private fun getHashFields(contentAddress: ContentAddress, sizeBytes: Long?, fields: Set<String>): FieldMap {
         val metadataMap = HashMap<String, Any?>()
         fields.forEach { field ->
             val function = field.substringAfter(HASH_FIELD_PREFIX).lowercase(Locale.ROOT)
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     metadataMap[field] = HashUtils.getHash(input, function)
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to get hash for mimeType=$mimeType uri=$uri function=$function", e)
+                Log.w(LOG_TAG, "failed to get hash for $contentAddress function=$function", e)
             }
         }
         return metadataMap
     }
 
-    private fun getExifFields(uri: Uri, mimeType: String, sizeBytes: Long?, fields: Set<String>): FieldMap {
+    private fun getExifFields(contentAddress: ContentAddress, sizeBytes: Long?, fields: Set<String>): FieldMap {
+        val mimeType = contentAddress.mimeType
+
         val metadataMap = HashMap<String, Any?>()
         if (fields.isEmpty() || isVideo(mimeType)) {
             return metadataMap
@@ -1445,7 +1485,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
         var foundExif = false
         if (canReadWithMetadataExtractor(mimeType)) {
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val metadata = MetadataExtractorHelper.safeRead(input, sizeBytes)
                     for (dir in metadata.getDirectoriesOfType(ExifDirectoryBase::class.java)) {
                         foundExif = true
@@ -1459,18 +1499,18 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: NoClassDefFoundError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             } catch (e: AssertionError) {
-                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to read metadata by metadata-extractor for $contentAddress", e)
             }
         }
 
         if (!foundExif && canReadWithExifInterface(mimeType)) {
             // fallback to read EXIF via ExifInterface
             try {
-                Metadata.openSafeInputStream(context, uri, mimeType, sizeBytes)?.use { input ->
+                Metadata.openSafeInputStream(context, contentAddress, sizeBytes)?.use { input ->
                     val exif = ExifInterface(input)
                     fields.forEach { tag ->
                         if (exif.hasAttribute(tag)) {
@@ -1484,7 +1524,7 @@ class MetadataFetchHandler(private val context: Context) : MethodCallHandler {
             } catch (e: Exception) {
                 // ExifInterface initialization can fail with a RuntimeException
                 // caused by an internal MediaMetadataRetriever failure
-                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to get metadata by ExifInterface for $contentAddress", e)
             }
         }
 

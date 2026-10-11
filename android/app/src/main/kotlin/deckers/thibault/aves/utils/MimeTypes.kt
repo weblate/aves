@@ -144,7 +144,7 @@ object MimeTypes {
         else -> false
     }
 
-    // Glide automatically applies EXIF orientation when decoding images of known formats
+    // Glide automatically applies EXIF orientation when decoding images of known formats,
     // but we need to rotate the decoded bitmap for the other formats.
     // Maybe related to ExifInterface version used by Glide:
     // https://github.com/bumptech/glide/blob/master/gradle/libs.versions.toml#L29
@@ -158,7 +158,7 @@ object MimeTypes {
     }
 
     // Thumbnails obtained from the Media Store are automatically rotated
-    // according to EXIF orientation when decoding images of known formats
+    // according to EXIF orientation when decoding images of known formats,
     // but we need to rotate the decoded bitmap for the other formats
     fun needRotationAfterContentResolverThumbnail(mimeType: String) = when (mimeType) {
         DNG, DNG_ADOBE, PNG -> true

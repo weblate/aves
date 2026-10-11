@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import deckers.thibault.aves.model.ContentAddress
 import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.LogUtils
 import deckers.thibault.aves.utils.MimeTypes
@@ -16,7 +17,10 @@ object MultiTrackMedia {
     private val LOG_TAG = LogUtils.createTag<MultiTrackMedia>()
 
     @RequiresApi(Build.VERSION_CODES.P)
-    fun getImage(context: Context, uri: Uri, trackIndex: Int?): Bitmap? {
+    fun getImage(context: Context, contentAddress: ContentAddress): Bitmap? {
+        val uri = contentAddress.uri
+        val trackIndex = contentAddress.pageId
+
         val retriever = StorageUtils.openMetadataRetriever(context, uri) ?: return null
         try {
             return if (trackIndex != null) {
@@ -26,7 +30,7 @@ object MultiTrackMedia {
                 retriever.primaryImage
             }
         } catch (e: Exception) {
-            Log.w(LOG_TAG, "failed to extract image from uri=$uri trackIndex=$trackIndex", e)
+            Log.w(LOG_TAG, "failed to extract image from $contentAddress", e)
         } finally {
             // cannot rely on `MediaMetadataRetriever` being `AutoCloseable` on older APIs
             retriever.release()

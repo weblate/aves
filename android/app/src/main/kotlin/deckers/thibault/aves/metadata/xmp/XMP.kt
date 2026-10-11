@@ -1,7 +1,6 @@
 package deckers.thibault.aves.metadata.xmp
 
 import android.content.Context
-import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
@@ -16,6 +15,7 @@ import deckers.thibault.aves.metadata.Mp4ParserHelper.processBoxes
 import deckers.thibault.aves.metadata.Mp4ParserHelper.toBytes
 import deckers.thibault.aves.metadata.metadataextractor.SafeMp4UuidBoxHandler
 import deckers.thibault.aves.metadata.metadataextractor.SafeXmpReader
+import deckers.thibault.aves.model.ContentAddress
 import deckers.thibault.aves.storage.StorageUtils
 import deckers.thibault.aves.utils.ContextUtils.queryContentPropValue
 import deckers.thibault.aves.utils.LogUtils
@@ -69,11 +69,13 @@ object XMP {
     // so we fall back to the native content resolver, if possible
     fun checkIsoBMFFImage(
         context: Context,
-        mimeType: String,
-        uri: Uri,
+        contentAddress: ContentAddress,
         foundXmp: Boolean,
         processXmp: (xmpMeta: XMPMeta) -> Unit,
     ) {
+        val mimeType = contentAddress.mimeType
+        val uri = contentAddress.uri
+
         if (!foundXmp && isIsoBMFFImage(mimeType) && StorageUtils.isMediaStoreContentUri(uri) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 val xmpBytes = context.queryContentPropValue(uri, mimeType, MediaStore.MediaColumns.XMP)
@@ -82,7 +84,7 @@ object XMP {
                     processXmp(xmpMeta)
                 }
             } catch (e: Exception) {
-                Log.w(LOG_TAG, "failed to get XMP by content resolver for mimeType=$mimeType uri=$uri", e)
+                Log.w(LOG_TAG, "failed to get XMP by content resolver for $contentAddress", e)
             }
         }
     }
@@ -91,11 +93,12 @@ object XMP {
     // so we fall back to parsing with `mp4parser`
     fun checkMp4(
         context: Context,
-        mimeType: String,
-        uri: Uri,
-        path: String?,
+        contentAddress: ContentAddress,
         processDirs: (dirs: List<Directory>) -> Unit,
     ) {
+        val mimeType = contentAddress.mimeType
+        val uri = contentAddress.uri
+
         if (mimeType != MimeTypes.MP4) return
         try {
             Mp4ParserHelper.consumeIso(context, uri, Mp4ParserHelper.metadataBoxParser()) { isoFile ->
@@ -109,14 +112,14 @@ object XMP {
                         SafeMp4UuidBoxHandler(metadata).processBox("", payload, -1, null)
                         processDirs(metadata.directories.filter { dir -> dir.tagCount > 0 }.toList())
                     } else {
-                        Log.w(LOG_TAG, "MP4 box too large at $boxSize bytes, for mimeType=$mimeType uri=$uri path=$path")
+                        Log.w(LOG_TAG, "MP4 box too large at $boxSize bytes, for $contentAddress")
                     }
                 }
             }
         } catch (e: NoClassDefFoundError) {
-            Log.w(LOG_TAG, "failed to parse MP4 for mimeType=$mimeType uri=$uri path=$path", e)
+            Log.w(LOG_TAG, "failed to parse MP4 for $contentAddress", e)
         } catch (e: Exception) {
-            Log.w(LOG_TAG, "failed to get XMP by MP4 parser for mimeType=$mimeType uri=$uri path=$path", e)
+            Log.w(LOG_TAG, "failed to get XMP by MP4 parser for $contentAddress", e)
         }
     }
 
